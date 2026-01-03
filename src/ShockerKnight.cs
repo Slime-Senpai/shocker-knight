@@ -14,7 +14,7 @@ public class ShockerKnight() : Mod("ShockerKnight"), ICustomMenuMod, ITogglableM
 
     public override string GetVersion()
     {
-        return "1.0.0";
+        return "1.1.0";
     }
 
     public MenuScreen GetMenuScreen(MenuScreen modListMenu, ModToggleDelegates? toggleDelegates)
@@ -42,6 +42,7 @@ public class ShockerKnight() : Mod("ShockerKnight"), ICustomMenuMod, ITogglableM
         Log("Unloading");
         ModHooks.AfterTakeDamageHook -= AfterDamageTaken;
         ModHooks.AfterPlayerDeadHook -= OnPlayerDeath;
+        _ = _handler.Dispose();
         Log("Unloaded successfully");
     }
 
@@ -70,11 +71,13 @@ public class ShockerKnight() : Mod("ShockerKnight"), ICustomMenuMod, ITogglableM
             },
             PiShockSecrets =
             {
+                ConnectMode = PiShockConfiguration.ConnectMode.Http,
                 Name = "ShockerKnight"
             }
         };
 
-        _handler = new PiShockHandler(_configuration);
+        _handler = new PiShockHandler(_configuration, Log);
+        _ = _handler.Initialize();
 
         ModHooks.AfterTakeDamageHook += AfterDamageTaken;
         ModHooks.AfterPlayerDeadHook += OnPlayerDeath;
@@ -136,13 +139,13 @@ public class ShockerKnight() : Mod("ShockerKnight"), ICustomMenuMod, ITogglableM
                 },
                 () => (int)_configuration.DamagePunishment.Mode),
             new CustomSlider("Duration Min",
-                value => _configuration.DamagePunishment.MinDuration = (int)value,
-                () => _configuration.DamagePunishment.MinDuration,
-                0, 15, true),
+                value => _configuration.DamagePunishment.MinDuration = Math.Round(value, 1),
+                () => (float)_configuration.DamagePunishment.MinDuration,
+                0, 15),
             new CustomSlider("Duration Max",
-                value => _configuration.DamagePunishment.MaxDuration = (int)value,
-                () => _configuration.DamagePunishment.MaxDuration,
-                0, 15, true),
+                value => _configuration.DamagePunishment.MaxDuration = Math.Round(value, 1),
+                () => (float)_configuration.DamagePunishment.MaxDuration,
+                0, 15),
             new CustomSlider("Intensity Min",
                 value => _configuration.DamagePunishment.MinIntensity = (int)value,
                 () => _configuration.DamagePunishment.MinIntensity,
@@ -172,13 +175,13 @@ public class ShockerKnight() : Mod("ShockerKnight"), ICustomMenuMod, ITogglableM
                 },
                 () => (int)_configuration.DeathPunishment.Mode),
             new CustomSlider("Duration Min",
-                value => _configuration.DeathPunishment.MinDuration = (int)value,
-                () => _configuration.DeathPunishment.MinDuration,
-                0, 15, true),
+                value => _configuration.DeathPunishment.MinDuration = Math.Round(value, 1),
+                () => (float)_configuration.DeathPunishment.MinDuration,
+                0, 15),
             new CustomSlider("Duration Max",
-                value => _configuration.DeathPunishment.MaxDuration = (int)value,
-                () => _configuration.DeathPunishment.MaxDuration,
-                0, 15, true),
+                value => _configuration.DeathPunishment.MaxDuration = Math.Round(value, 1),
+                () => (float)_configuration.DeathPunishment.MaxDuration,
+                0, 15),
             new CustomSlider("Intensity Min",
                 value => _configuration.DeathPunishment.MinIntensity = (int)value,
                 () => _configuration.DeathPunishment.MinIntensity,
@@ -195,11 +198,18 @@ public class ShockerKnight() : Mod("ShockerKnight"), ICustomMenuMod, ITogglableM
                 {
                     apiMenuVisible = !apiMenuVisible;
                     _menuRef.UpdateVisibility(apiMenuVisible,
-                        ["PiShock_Username", "PiShock_APIKey", "PiShock_ShockerCode"]);
+                        ["PiShock_Username", "PiShock_APIKey", "PiShock_ConnectMode", "PiShock_ShockerCode", "PiShock_HubId", "PiShock_ShockerId"]);
                 }),
             new Satchel.BetterMenus.InputField(
                 "Username",
-                username => _configuration.PiShockSecrets.Username = username,
+                username =>
+                {
+                    if (username == _configuration.PiShockSecrets.Username) return;
+
+                    _configuration.PiShockSecrets.Username = username;
+                    _configuration.PiShockSecrets.UserId = 0;
+                    _handler.Restart();
+                },
                 () => _configuration.PiShockSecrets.Username,
                 "",
                 64,
@@ -207,20 +217,58 @@ public class ShockerKnight() : Mod("ShockerKnight"), ICustomMenuMod, ITogglableM
                 "PiShock_Username"
             ) { isVisible = false },
             new Satchel.BetterMenus.InputField("API Key",
-                apikey => _configuration.PiShockSecrets.Apikey = apikey,
+                apikey =>
+                {
+                    if (apikey == _configuration.PiShockSecrets.Apikey) return;
+
+                    _configuration.PiShockSecrets.Apikey = apikey;
+                    _configuration.PiShockSecrets.UserId = 0;
+                    _handler.Restart();
+                },
                 () => _configuration.PiShockSecrets.Apikey,
                 "",
                 64,
                 inputFieldConfig,
                 "PiShock_APIKey"
             ) { isVisible = false },
-            new Satchel.BetterMenus.InputField("Shocker Code",
+            new HorizontalOption("Connection Mode", "Select how the punishment will be sent",
+                ["Http", "Ws"],
+                setting =>
+                {
+                    _configuration.PiShockSecrets.ConnectMode = setting switch
+                    {
+                        0 => PiShockConfiguration.ConnectMode.Http,
+                        1 => PiShockConfiguration.ConnectMode.Ws,
+                        _ => PiShockConfiguration.ConnectMode.Http
+                    };
+
+                    _handler.Restart();
+                },
+                () => (int)_configuration.PiShockSecrets.ConnectMode,
+                "PiShock_ConnectMode") { isVisible = false },
+            new Satchel.BetterMenus.InputField("Shocker Code (for HTTP)",
                 code => _configuration.PiShockSecrets.Code = code,
                 () => _configuration.PiShockSecrets.Code,
                 "",
                 64,
                 inputFieldConfig,
                 "PiShock_ShockerCode"
+            ) { isVisible = false },
+            new Satchel.BetterMenus.InputField("Hub Id (for WS)",
+                hubId => _configuration.PiShockSecrets.HubId = Convert.ToInt32(hubId),
+                () => $"{_configuration.PiShockSecrets.HubId}",
+                "",
+                64,
+                inputFieldConfig,
+                "PiShock_HubId"
+            ) { isVisible = false },
+            new Satchel.BetterMenus.InputField("Shocker Id (for WS)",
+                shockerId => _configuration.PiShockSecrets.ShockerId = Convert.ToInt32(shockerId),
+                () => $"{_configuration.PiShockSecrets.ShockerId}",
+                "",
+                64,
+                inputFieldConfig,
+                "PiShock_ShockerId"
             ) { isVisible = false }
         ]);
     }

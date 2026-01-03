@@ -1,12 +1,75 @@
 using System;
+using System.Threading.Tasks;
 
 namespace ShockerKnight;
 
-public class PiShockHandler(PiShockConfiguration config)
+public class PiShockHandler(PiShockConfiguration config, Log log)
 {
-    private readonly PiShockAPI _api = new(config.PiShockSecrets);
+    private PiShockAPI _api;
 
     private readonly Random _random = new();
+
+    /// <summary>
+    ///     Initializes the PiShockHandler by initializing the underlying API.
+    /// </summary>
+    public async Task<string> Initialize()
+    {
+        try
+        {
+            if (_api != null && _api.IsInitialized())
+            {
+                await _api.Dispose();
+            }
+
+            _api = config.PiShockSecrets.ConnectMode switch
+            {
+                PiShockConfiguration.ConnectMode.Http => new PiShockHttpAPI(config.PiShockSecrets, log),
+                PiShockConfiguration.ConnectMode.Ws => new PiShockWsAPI(config.PiShockSecrets, log),
+                _ => throw new ArgumentOutOfRangeException()
+            };
+            return await _api.Initialize();
+        }
+        catch (Exception)
+        {
+            // Make sure the process doesn't crash
+            return string.Empty;
+        }
+    }
+
+    /// <summary>
+    ///     Releases resources used by the PiShockHandler and the underlying API.
+    /// </summary>
+    public async Task<string> Dispose()
+    {
+        try
+        {
+            if (_api == null) return string.Empty;
+
+            return await _api.Dispose();
+        }
+        catch (Exception)
+        {
+            // Make sure the process doesn't crash
+            return string.Empty;
+        }
+    }
+
+    /// <summary>
+    ///     Restarts the PiShockHandler by disposing of and reinitializing the underlying API.
+    /// </summary>
+    public async void Restart()
+    {
+        try
+        {
+            await Dispose();
+
+            await Initialize();
+        }
+        catch (Exception)
+        {
+            // Make sure the process doesn't crash
+        }
+    }
 
     /// <summary>
     ///     Handles the damage taken event by sending a shock signal through the PiShock API.
@@ -52,15 +115,20 @@ public class PiShockHandler(PiShockConfiguration config)
     private void HandlePunishment(float durationMultiplier, float intensityMultiplier,
         PiShockConfiguration.BasePunishmentSettings settings)
     {
+        if (!settings.Enabled)
+        {
+            return;
+        }
+
         var minDuration = Math.Min(settings.MinDuration, settings.MaxDuration);
         var maxDuration = Math.Max(settings.MinDuration, settings.MaxDuration);
 
-        var duration = _random.Next(minDuration, maxDuration) * durationMultiplier;
+        var duration = (minDuration + _random.NextDouble() * (maxDuration - minDuration)) * durationMultiplier;
 
         var minIntensity = Math.Min(settings.MinIntensity, settings.MaxIntensity);
         var maxIntensity = Math.Max(settings.MinIntensity, settings.MaxIntensity);
 
-        var intensity = _random.Next(minIntensity, maxIntensity) * intensityMultiplier;
+        var intensity = (int)Math.Round(_random.Next(minIntensity, maxIntensity + 1) * intensityMultiplier);
 
         if (!settings.Overcharge)
         {
@@ -71,14 +139,14 @@ public class PiShockHandler(PiShockConfiguration config)
         switch (settings.Mode)
         {
             case PiShockConfiguration.Mode.Shock:
-                _ = _api.SendShockAsync((int)Math.Round(duration), (int)Math.Round(intensity), $"-{settings.Name}");
+                _ = _api.SendShockAsync(duration, intensity, $"-{settings.Name}");
                 break;
             default:
             case PiShockConfiguration.Mode.Vibration:
-                _ = _api.SendVibrationAsync((int)Math.Round(duration), (int)Math.Round(intensity), $"-{settings.Name}");
+                _ = _api.SendVibrationAsync(duration, intensity, $"-{settings.Name}");
                 break;
             case PiShockConfiguration.Mode.Beep:
-                _ = _api.SendBeepAsync((int)Math.Round(duration), $"-{settings.Name}");
+                _ = _api.SendBeepAsync(duration, $"-{settings.Name}");
                 break;
         }
     }

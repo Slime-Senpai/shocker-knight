@@ -19,9 +19,9 @@ public class PiShockConfiguration
 
         public int MaxIntensity = 100;
 
-        public int MinDuration = 0;
+        public double MinDuration = 0;
 
-        public int MaxDuration = 15;
+        public double MaxDuration = 15;
 
         public bool Overcharge = false;
 
@@ -40,6 +40,8 @@ public class PiShockConfiguration
 
     public class PiShockSettings
     {
+        public ConnectMode ConnectMode { get; set; }
+
         public string Username { get; set; }
 
         public string Apikey { get; set; }
@@ -47,5 +49,17 @@ public class PiShockConfiguration
         public string Code { get; set; }
 
         public string Name { get; set; }
+
+        public int HubId { get; set; }
+
+        public int ShockerId { get; set; }
+
+        public int UserId { get; set; }
+    }
+
+    public enum ConnectMode
+    {
+        Http,
+        Ws
     }
 }

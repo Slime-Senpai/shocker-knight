@@ -1,96 +1,59 @@
 using System;
 using System.Net.Http;
+using System.Net.WebSockets;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 using static ShockerKnight.Operations;
 
 namespace ShockerKnight;
 
-public class PiShockAPI(PiShockConfiguration.PiShockSettings config)
+public abstract class PiShockAPI
 {
-    private readonly HttpClient _client = new()
-    {
-        BaseAddress = new Uri("https://do.pishock.com/api/apioperate/")
-    };
+    private bool _initialized = false;
 
-    public async Task<string> SendShockAsync(int duration, int intensity, string nameExtra = "")
+    protected abstract Task<string> SendOperationAsync(BaseOperation operation, string nameExtra = "");
+
+    public virtual async Task<string> Initialize()
     {
-        return await SendOperationAsync(new ShockOperation(duration, intensity), nameExtra);
+        _initialized = true;
+
+        return string.Empty;
     }
 
-    public async Task<string> SendVibrationAsync(int duration, int intensity, string nameExtra = "")
+    public virtual async Task<string> Dispose()
     {
-        return await SendOperationAsync(new VibrationOperation(duration, intensity), nameExtra);
+        _initialized = false;
+
+        return string.Empty;
     }
 
-    public async Task<string> SendBeepAsync(int duration, string nameExtra = "")
+    public bool IsInitialized()
     {
-        return await SendOperationAsync(new BeepOperation(duration), nameExtra);
+        return _initialized;
     }
 
-    private async Task<string> SendOperationAsync(BaseOperation operation, string nameExtra = "")
+    private async Task<string> DoOperation(BaseOperation operation, string nameExtra = "")
     {
-        var json = JsonConvert.SerializeObject(new PiShockOperation(config, operation, nameExtra));
-        var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
-        var response = await _client.PostAsync("", content);
-        // If it's not a success code, throw an exception for simplicity
-        response.EnsureSuccessStatusCode();
-        // Otherwise, return the response cause why not
-        return await response.Content.ReadAsStringAsync();
-    }
-
-    private class PiShockOperation(
-        string username,
-        string apikey,
-        string code,
-        string name,
-        int op,
-        int duration,
-        int intensity)
-    {
-        public PiShockOperation(PiShockConfiguration.PiShockSettings config, BaseOperation operation, string nameExtra)
-            : this(config.Username, config.Apikey, config.Code, config.Name + nameExtra, operation.Op, operation.Duration, operation.Intensity)
+        if (!IsInitialized())
         {
+            throw new InvalidOperationException("PiShockAPI was not initialized");
         }
 
-        public string Username { get; set; } = username;
-        public string Apikey { get; set; } = apikey;
-        public string Code { get; set; } = code;
-        public string Name { get; set; } = name;
-        public int Op { get; set; } = op;
+        return await SendOperationAsync(operation, nameExtra);
+    }
 
-        private int _duration = duration;
+    public async Task<string> SendShockAsync(double duration, int intensity, string nameExtra = "")
+    {
+        return await DoOperation(new ShockOperation(duration, intensity), nameExtra);
+    }
 
-        public int Duration
-        {
-            get => _duration;
-            set
-            {
-                _duration = value switch
-                {
-                    < 0 => 0,
-                    > 15 => 15,
-                    _ => value
-                };
-            }
-        }
+    public async Task<string> SendVibrationAsync(double duration, int intensity, string nameExtra = "")
+    {
+        return await DoOperation(new VibrationOperation(duration, intensity), nameExtra);
+    }
 
-        private int _intensity = intensity;
-
-        public int Intensity
-        {
-            get => _intensity;
-            set
-            {
-                {
-                    _intensity = value switch
-                    {
-                        < 0 => 0,
-                        > 100 => 100,
-                        _ => value
-                    };
-                }
-            }
-        }
+    public async Task<string> SendBeepAsync(double duration, string nameExtra = "")
+    {
+        return await DoOperation(new BeepOperation(duration), nameExtra);
     }
 }
